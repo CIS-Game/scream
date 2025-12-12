@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>😱 CIS-Scream</title>
+  <style>
+    :root {
+      --bg: #060821;
+      --card: #11162e;
+      --accent: #ff4b5c;
+      --accent2: #36d1dc;
+      --text: #f7f7ff;
+      --radius: 20px;
+      --gap: 16px;
+      --font-main: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+
+    body{
+      background:var(--bg);
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      font-family:var(--font-main);
+    }
+
+    .game{
+      width:100%;
+      max-width:480px;
+      padding:20px;
+    }
+
+    .card{
+      background:var(--card);
+      border-radius:var(--radius);
+      padding:20px;
+      text-align:center;
+      box-shadow:0 10px 25px rgba(0,0,0,0.45);
+    }
+
+    h1{
+      font-size:min(7vw,30px);
+      margin-bottom:6px;
+    }
+    .subtitle{
+      font-size:min(4vw,16px);
+      opacity:.8;
+      margin-bottom:18px;
+    }
+
+    .best{
+      font-size:min(7vw,30px);
+      font-weight:800;
+      margin-bottom:4px;
+    }
+    .score{
+      font-size:min(5vw,21px);
+      opacity:.9;
+      margin-bottom:14px;
+    }
+
+    .meter{
+      width:100%;
+      height:26px;
+      border-radius:999px;
+      background:#2a3257;
+      overflow:hidden;
+      margin-bottom:10px;
+      position:relative;
+    }
+    .meter-fill{
+      height:100%;
+      width:0%;
+      background:linear-gradient(90deg,var(--accent),var(--accent2));
+      transition:width .1s linear;
+    }
+    .meter-peak{
+      position:absolute;
+      top:0;
+      bottom:0;
+      width:2px;
+      background:#ffd166;
+      box-shadow:0 0 8px rgba(255,209,102,.9);
+      pointer-events:none;
+      transform:translateX(-1px);
+    }
+
+    .db-label{
+      font-size:min(4.5vw,17px);
+      margin-bottom:18px;
+    }
+
+    .controls{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+      margin-bottom:8px;
+    }
+
+    button{
+      border:none;
+      border-radius:16px;
+      padding:12px;
+      font-size:min(4.8vw,18px);
+      font-weight:700;
+      color:#fff;
+      background:var(--accent);
+      cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+    }
+    button.secondary{
+      background:#3b4ba8;
+    }
+    button.small{
+      font-size:min(4vw,15px);
+      padding:9px;
+      background:#1fb57a;
+    }
+    button:active{
+      transform:scale(.97);
+    }
+    button:disabled{
+      opacity:.5;
+      transform:none;
+      cursor:default;
+    }
+
+    .status{
+      margin-top:4px;
+      font-size:min(3.8vw,15px);
+      min-height:1.2em;
+      opacity:.85;
+    }
+
+    .promo{
+      margin-top:18px;
+      font-size:min(3.9vw,15px);
+      line-height:1.4;
+      text-align:center;
+      color:#e6ecff;
+      word-break:break-word;
+    }
+    .promo a{
+      color:#ffd166;
+      text-decoration:underline;
+    }
+
+    /* контейнер для плеера */
+    .player-wrap{
+      margin-top:8px;
+    }
+  </style>
+</head>
+<body>
+<div class="game">
+  <div class="card">
+    <h1>😱 CIS-Scream</h1>
+    <div class="subtitle">Крикни слово CIS, чтобы побить рекорд</div>
+
+    <div class="best" id="best">Рекорд: 0</div>
+    <div class="score" id="score">Очки: 0</div>
+
+    <div class="meter">
+      <div class="meter-fill" id="meterFill"></div>
+      <div class="meter-peak" id="meterPeak" style="left:0;"></div>
+    </div>
+    <div class="db-label" id="dbLabel">Громкость: 0</div>
+
+    <div class="controls">
+      <button id="startBtn">Старт / Стоп</button>
+      <button class="secondary" id="resetBtn">Сброс рекорда</button>
+      <button class="small" id="saveBtn" disabled>Скачать запись крика</button>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="player-wrap" id="playerWrap"></div>
+
+    <div class="promo">
+      🔊 Кто громче крикнет<br>
+      🏆 получит крутой приз!<br><br>
+      Присылайте скриншоты ✉️ на почту:<br>
+      <a href="mailto:magazine@sovinfosystems.ru">magazine@sovinfosystems.ru</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  let audioContext = null;
+  let analyser = null;
+  let micStream = null;
+  let rafId = null;
+  let running = false;
+
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let lastBlobUrl = null;
+  let lastBlob = null;
+
+  const meterFill = document.getElementById('meterFill');
+  const meterPeak = document.getElementById('meterPeak');
+  const dbLabel   = document.getElementById('dbLabel');
+  const scoreEl   = document.getElementById('score');
+  const bestEl    = document.getElementById('best');
+  const statusEl  = document.getElementById('status');
+  const startBtn  = document.getElementById('startBtn');
+  const resetBtn  = document.getElementById('resetBtn');
+  const saveBtn   = document.getElementById('saveBtn');
+  const playerWrap = document.getElementById('playerWrap');
+
+  let bestScore = 0;
+  let peakPercent = 0;
+
+  async function start() {
+    if (running) { stop(); return; }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+        video: false
+      });
+
+      // анализ громкости
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(micStream);
+
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.8;
+      source.connect(analyser);
+
+      // запись звука
+      if (typeof MediaRecorder !== 'undefined') {
+        if (lastBlobUrl) {
+          URL.revokeObjectURL(lastBlobUrl);
+          lastBlobUrl = null;
+        }
+        lastBlob = null;
+        recordedChunks = [];
+
+        let mimeType = '';
+        if (MediaRecorder.isTypeSupported &&
+            MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+          mimeType = 'audio/ogg;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported &&
+                   MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        }
+
+        mediaRecorder = mimeType
+          ? new MediaRecorder(micStream, { mimeType })
+          : new MediaRecorder(micStream);
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          if (recordedChunks.length === 0) return;
+
+          let blobType = 'audio/ogg';
+          let extension = 'ogg';
+          if (mimeType.includes('webm')) {
+            blobType = 'audio/webm';
+            extension = 'webm';
+          }
+
+          lastBlob = new Blob(recordedChunks, { type: blobType });
+          if (lastBlobUrl) {
+            URL.revokeObjectURL(lastBlobUrl);
+          }
+          lastBlobUrl = URL.createObjectURL(lastBlob);
+          saveBtn.dataset.ext = extension;
+          saveBtn.disabled = false;
+          statusEl.textContent = 'Запись готова. Нажми «Скачать запись крика» или послушай ниже.';
+
+          // создаём/обновляем плеер для прослушивания
+          playerWrap.innerHTML = '';
+          const audio = document.createElement('audio');
+          audio.id = 'player';
+          audio.controls = true;
+          audio.src = lastBlobUrl;
+          playerWrap.appendChild(audio);
+        };
+
+        mediaRecorder.start();
+        saveBtn.disabled = true;
+        playerWrap.innerHTML = '';
+      } else {
+        statusEl.textContent = 'Браузер не поддерживает запись аудио.';
+      }
+
+      running = true;
+      startBtn.textContent = 'Стоп';
+      statusEl.textContent = 'Крикни CIS максимально громко!';
+
+      scoreEl.textContent = 'Очки: 0';
+      peakPercent = 0;
+      meterPeak.style.left = '0%';
+
+      animate();
+    } catch (err) {
+      statusEl.textContent = 'Нет доступа к микрофону.';
+      console.error(err);
+    }
+  }
+
+  function stop() {
+    running = false;
+    startBtn.textContent = 'Старт / Стоп';
+    if (rafId) cancelAnimationFrame(rafId);
+
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
+
+    if (micStream) {
+      micStream.getTracks().forEach(t => t.stop());
+      micStream = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+    statusEl.textContent = 'Игра остановлена.';
+  }
+
+  function animate() {
+    if (!running || !analyser) return;
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) sum += data[i];
+    const avg = sum / data.length;
+    const percent = Math.min(100, (avg / 255) * 100);
+
+    meterFill.style.width = percent + '%';
+    dbLabel.textContent = 'Громкость: ' + Math.round(percent);
+
+    const score = Math.round(percent * 10);
+    scoreEl.textContent = 'Очки: ' + score;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestEl.textContent = 'Рекорд: ' + bestScore;
+    }
+
+    if (percent > peakPercent) {
+      peakPercent = percent;
+      meterPeak.style.left = peakPercent + '%';
+    }
+
+    rafId = requestAnimationFrame(animate);
+  }
+
+  startBtn.addEventListener('click', start);
+  resetBtn.addEventListener('click', () => {
+    bestScore = 0;
+    bestEl.textContent = 'Рекорд: 0';
+    peakPercent = 0;
+    meterPeak.style.left = '0%';
+  });
+
+  // скачивание записи
+  saveBtn.addEventListener('click', () => {
+    if (!lastBlob) return;
+
+    const url = lastBlobUrl || URL.createObjectURL(lastBlob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+
+    const ext = saveBtn.dataset.ext || 'ogg';
+    a.download = 'cis-scream.' + ext;
+
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+</script>
+</body>
+</html>
+
